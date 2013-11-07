@@ -1,0 +1,179 @@
+#!/bin/bash
+
+#   Author: Jason Johns
+#   Version: 0.1
+#   Date: 5-20-2102
+#   
+#   This script uses a Gigapan Stitch > 2.2 install for OSX to automatically batch-generate 
+#   a set of images in imagePath into a number of panoramas based on the integer 
+#   parameter input.
+
+#   Prior to using, make sure the file paths on lines 16, 17 and 137 are correct.
+
+
+#imagePath is where images are stored to be stitched together.  
+#savePath is the server location for panoramas
+imagePath="/media/Storage/Programming/Projects/panostitch/images"
+savePath="/home/jason/Desktop"
+imageExtension="*.jpg"
+
+#check if specified folders exist and user input is valid
+if [ ! -d "$imagePath" ]; then
+    echo "
+        $imagePath doesn't exist.  Make sure imagePath variable in ${0} is correct.
+        Exiting now....
+
+    "
+    exit
+
+if [ ! -d $savePath ]; then
+    echo "
+        $savePath doesn't exist.  Make sure savePath variable in ${0} is correct. 
+        Exiting now....
+  
+    "
+    exit
+fi
+
+if [ ! -d "$savePath/photos" ]; then
+    mkdir "$savePath/photos"
+fi
+  
+if [ ! -d "$savePath/thumbs" ]; then
+    mkdir "$savePath/thumbs"
+fi
+
+if [ ! -d "$imagePath/completed" ]; then
+    mkdir "$imagePath/completed"
+fi
+
+re="^[0-9]+$"
+if ! [ $1 =~ $re ]; then
+    if [ $1 -eq "" ]; then
+        echo "
+            Proper input is ${0##*/} INTEGER.  You entered no arguments
+        "
+    else
+        echo "  
+            Proper input is generatePanos INTEGER.  $1 is not an integer.
+            Exiting now....
+
+        "
+    fi
+    exit
+fi
+
+if [ $# -gt 1 ]; then
+    echo "  
+        Proper input is generatePanos INTEGER.  Command has too many arguments
+        Exiting now
+  
+      "
+    exit
+
+else
+  cd $imagePath
+  
+  count=1;
+  curStop=1
+  curImage=0
+  directory=
+  dateString=$(date +"%m-%d-%Y")
+  
+  #get all image files in directory
+  echo "Images per folder: $1
+  "
+  find . -maxdepth 1 -type f -iname "$imageExtension" | sort -n -t _ -k 2 | while read -r file 
+  do
+    echo "Current image: $curImage"
+    echo "Current Stop: $curStop
+    "
+    #if current stop directory doesn't exist, create it
+    if [ ! -d "$dateString-$curStop" ]; then
+      directory="$dateString-$curStop"
+      #echo $directory
+      mkdir $directory
+    fi
+    
+    #if current image counter is less than the number of frames to be stitched
+    #together, move current file to current stop directory
+    if [[ $curImage -le $1 ]]; then
+      mv $file $directory
+      curImage=$((curImage+1))
+    fi  
+    
+    #if current image counter equals the number of frames to be stitched, 
+    #reset image counter and increment stop counter
+    if [[ $curImage -eq $1 ]]; then
+      curStop=$((curStop+1))
+      curImage=0
+    fi
+    
+  done
+  
+  #get the individual directories in the image storage folder
+  dirlist=$(find . -mindepth 1 -maxdepth 1 -type d \( ! -name completed \) | sort -n)
+  for dir in $dirlist
+  do
+    cd $dir
+    echo "Downsizing $(ls imageExtension | wc -l) images"
+    
+    curTime=$(date +"%T")
+    echo "Current directory: $dir"
+    pwd
+    
+    #find all the JPG files
+    fileList=$(find . -type f -iname $imageExtension | sort -n)
+    
+    #convert them to lower resolution
+    for i in $fileList
+    do
+      echo "Converting $i to 1600 pixels wide"
+      convert $i -geometry 1600x $i 
+    done
+    
+    #stitch the panorama together
+    ################################################################
+    /Applications/GigaPan\ 2.2.0210/GigaPan\ Stitch\ 2.2.0210.app/Contents/MacOS/GigaPan\ Stitch\ 2.2.0210 --images /Users/labuser/Pictures/07-27-2012-4-64/* --colfirst --downward --rightward --save-as /Users/labuser/Pictures/cmdTest.gigapan --export jpeg 0 /Users/labuser/Pictures/cmdTest.jpg --batch-mode --stitch-quit
+    
+    #Downsize and convert panorama
+    #Remove if not necessary
+    #######################################################################
+    image="pano.tif"
+    
+    #convert pano to jpg and get count of images in photo folder
+    mogrify -format jpg $image
+    num=$(ls -l "$savePath/photos" | wc -l) 
+    prefix=$((num+1))
+    
+    #convert full size pano to 1000 pixels high and rename with prefix number
+    #move to /photos folder
+    convert pano.jpg -geometry x1000 "$prefix-pano.jpg"
+    mv "$prefix-pano.jpg" "$savePath/photos"
+    
+    #convert full size pano to 600 pixels wide and rename with prefix number
+    #move to /thumbs folder
+    convert pano.jpg -geometry 600x "$prefix-pano.jpg"
+    mv "$prefix-pano.jpg" "$savePath/thumbs"
+    
+    #cleanup
+    rm *.tif
+    
+    cd ../
+    
+  done
+  
+  #rinse and repeat
+  for dir in $dirlist
+  do
+    mv $dir "completed"
+  done
+
+
+fi
+
+
+
+
+
+
