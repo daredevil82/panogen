@@ -1,0 +1,49 @@
+#!/bin/bash
+#    Author: Jason Johns
+#    Version: 0.1
+#    Date: 5-20-2012
+#    This script is intended to install and configure a Linux system to prepare
+#    it for batch generating panoramas.  It is intended to run as sudo, and downloads,
+#    compiles and installs graphic libraries, the hugin panorama stitching application
+#    and related files as well as the imagemagick manipulation library.
+
+#    The results of this script work seamlessly with the batch panorama generating scripts
+#    written by Jason Johns.
+
+#gets the panorama and script libraries
+echo "Getting Panotools library"
+wget http://sourceforge.net/projects/panotools/files/libpano13/libpano13-2.9.18/libpano13-2.9.18.tar.gz/download -O libpano13-x.tar.gz
+
+echo ""
+echo "Getting Panotools Scripts"
+wget http://search.cpan.org/CPAN/authors/id/B/BP/BPOSTLE/Panotools-Script-0.26.tar.gz
+
+#Updates aptitude and downloads the relevant programs and libraries
+echo "Getting JPEG, TIFF and PNG Libraries"
+sudo apt-get update
+sudo apt-get install libpng12-dev libtiff4-dev libjpeg-dev hugin hugin-tools libimage-exiftool-perl libimage-size-perl imagemagick
+
+#Extracts out the panoram library and script wrappers
+tar -zxvf libpano13-x.tar.gz
+tar -zxvf Panotools-Script-0.26.tar.gz
+
+#Configures, compiles and installs the panorama library
+cd libpano13-2.9.18
+sudo ./configure
+sudo make
+sudo make install
+
+cd ../
+
+#Generates and executes makefile to install wrapper library
+cd Panotools-Script-0.26
+sudo perl Makefile.PL
+sudo make
+sudo make test
+sudo make install
+
+#cleans up installation directory
+cd ../
+rm *.tar.gz
+
+

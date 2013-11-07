@@ -1,0 +1,207 @@
+#!/bin/bash
+
+#   Author: Jason Johns
+#   Version: 0.1
+#   Date: 5-20-2102
+#   
+#   This script uses a Hugin install to automatically batch-generate a set of images in
+#   imagePath into a number of panoramas based on the integer parameter input.
+
+
+#imagePath is where images are stored to be stitched together.  
+#savePath is the server location for panoramas
+imagePath="/media/Storage/Programming/Projects/panostitch/images"
+savePath="/home/jason/Desktop"
+imageExtension="*.jpg"
+
+#check if specified folders exist and user input is valid
+if [ ! -d "$imagePath" ]; then
+    echo "
+        $imagePath doesn't exist.  Make sure imagePath variable in ${0} is correct.
+        Exiting now....
+
+    "
+    exit
+
+if [ ! -d $savePath ]; then
+    echo "
+        $savePath doesn't exist.  Make sure savePath variable in ${0} is correct. 
+        Exiting now....
+  
+    "
+    exit
+fi
+
+if [ ! -d "$savePath/photos" ]; then
+    mkdir "$savePath/photos"
+fi
+  
+if [ ! -d "$savePath/thumbs" ]; then
+    mkdir "$savePath/thumbs"
+fi
+
+if [ ! -d "$imagePath/completed" ]; then
+    mkdir "$imagePath/completed"
+fi
+
+re="^[0-9]+$"
+if ! [ $1 =~ $re ]; then
+    if [ $1 -eq "" ]; then
+        echo "
+            Proper input is ${0##*/} INTEGER.  You entered no arguments
+        "
+    else
+        echo "  
+            Proper input is generatePanos INTEGER.  $1 is not an integer.
+            Exiting now....
+
+        "
+    fi
+    exit
+fi
+
+if [ $# -gt 1 ]; then
+    echo "  
+        Proper input is generatePanos INTEGER.  Command has too many arguments
+        Exiting now
+  
+      "
+    exit
+
+else
+  cd $imagePath
+  
+  count=1;
+  curStop=1
+  curImage=0
+  directory=
+  dateString=$(date +"%m-%d-%Y")
+  
+  #get all image files in directory
+  echo "Images per folder: $1
+  "
+  find . -maxdepth 1 -type f -iname "$imageExtension" | sort -n -t _ -k 2 | while read -r file 
+  do
+    echo "Current image: $curImage"
+    echo "Current Stop: $curStop
+    "
+    #if current stop directory doesn't exist, create it
+    if [ ! -d "$dateString-$curStop" ]; then
+      directory="$dateString-$curStop"
+      #echo $directory
+      mkdir $directory
+    fi
+    
+    #if current image counter is less than the number of frames to be stitched
+    #together, move current file to current stop directory
+    if [[ $curImage -le $1 ]]; then
+      mv $file $directory
+      curImage=$((curImage+1))
+    fi  
+    
+    #if current image counter equals the number of frames to be stitched, 
+    #reset image counter and increment stop counter
+    if [[ $curImage -eq $1 ]]; then
+      curStop=$((curStop+1))
+      curImage=0
+    fi
+    
+  done
+  
+  #get the individual directories in the image storage folder
+  dirlist=$(find . -mindepth 1 -maxdepth 1 -type d \( ! -name completed \) | sort -n)
+  for dir in $dirlist
+  do
+    cd $dir
+    echo "Downsizing $(ls imageExtension | wc -l) images"
+    
+    curTime=$(date +"%T")
+    echo "Current directory: $dir"
+    pwd
+    
+    #find all the JPG files
+    fileList=$(find . -type f -iname $imageExtension | sort -n)
+    
+    #convert them to lower resolution
+    for i in $fileList
+    do
+      echo "Converting $i to 1600 pixels wide"
+      convert $i -geometry 1600x $i 
+    done
+    
+    #stitch the panorama together
+    ################################################################
+    #Generate project file
+    echo "Building project file" 
+    match-n-shift -o project.pto $imageExtension
+
+    #Find control points and ignore clouds
+    echo "Searching for Control Points" 
+    cpfind -o project.pto --multirow project.pto 
+    ptoclean -v --output project.pto project.pto 
+
+
+    #Clean up control points
+    echo "Cleanin gup points" 
+    cpclean -o project.pto project.pto 
+
+    #Find vertical lines
+    echo "Verical Line Search"
+    linefind -o project.pto project.pto 
+
+    #optimize position, straighten, photometric optimization and output projection
+    echo "Optimizing, Straigntening File" 
+    autooptimiser -a -m -l -s -o project.pto project.pto
+
+    #Calculate crop and size
+    pano_modify --canvas=AUTO -o project.pto project.pto
+
+    #Generate stitch makefile
+    echo "Generating makefile"
+    pto2mk -o project.mk -p pano project.pto
+
+    make -j 2 -f project.mk all 
+
+    echo "Panorama Done\n" 
+    
+    #Downsize and convert panorama
+    #Remove if not necessary
+    #######################################################################
+    image="pano.tif"
+    
+    #convert pano to jpg and get count of images in photo folder
+    mogrify -format jpg $image
+    num=$(ls -l "$savePath/photos" | wc -l) 
+    prefix=$((num+1))
+    
+    #convert full size pano to 1000 pixels high and rename with prefix number
+    #move to /photos folder
+    convert pano.jpg -geometry x1000 "$prefix-pano.jpg"
+    mv "$prefix-pano.jpg" "$savePath/photos"
+    
+    #convert full size pano to 600 pixels wide and rename with prefix number
+    #move to /thumbs folder
+    convert pano.jpg -geometry 600x "$prefix-pano.jpg"
+    mv "$prefix-pano.jpg" "$savePath/thumbs"
+    
+    #cleanup
+    rm *.tif
+    
+    cd ../
+    
+  done
+  
+  #rinse and repeat
+  for dir in $dirlist
+  do
+    mv $dir "completed"
+  done
+
+
+fi
+
+
+
+
+
+
